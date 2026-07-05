@@ -1,7 +1,0 @@
-<Solution>
-  <Configurations>
-    <Platform Name="x64" />
-    <Platform Name="x86" />
-  </Configurations>
-  <Project Path="OldRustExternal BetaTest/OldRustExternal BetaTest.vcxproj" Id="c4d40d30-2a29-4cf6-81e4-d7014c46155a" />
-</Solution>
