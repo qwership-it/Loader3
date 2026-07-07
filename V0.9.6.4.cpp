@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <thread>
-#include <chrono>
+#include <chrono> 
 #include <algorithm>
 #include <random>
 #include <winhttp.h>
@@ -32,6 +32,15 @@
 
 namespace fs = std::filesystem;
 
+struct CleanerConfig {
+    bool fullCleanEnabled = true;
+    bool hwidSpoofEnabled = true;
+    bool networkSpoofEnabled = false;
+    bool eacRemovalEnabled = true;
+    std::string customRustPath = "";
+    std::vector<std::string> excludedPaths; 
+};
+
 class UltimateCleaner {
 private:
     std::string steamPath;
@@ -39,6 +48,7 @@ private:
     std::string systemDrive;
     std::string fakeHWID;
     std::string backupPath;
+    CleanerConfig config; 
 
 public:
     UltimateCleaner() {
@@ -124,101 +134,121 @@ public:
         return "PC-" + std::to_string(dis(gen));
     }
 
-    bool spoofMachineGUIDOnly() {
-        std::cout << "[*] Spoofing Machine GUID...\n";
+    bool spoofExtendedMachineInfo() {
+        std::cout << "[*] Spoofing Extended Machine Information...\n";
 
         std::string newMachineName = generateRandomMachineName();
         std::string newGUID = generateRandomGUID();
 
-        RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
-            "SYSTEM\\CurrentControlSet\\Control\\ComputerName\\ComputerName",
-            "ComputerName", newMachineName);
-        RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
-            "SYSTEM\\CurrentControlSet\\Control\\ComputerName\\ActiveComputerName",
-            "ComputerName", newMachineName);
-        RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
-            "SYSTEM\\CurrentControlSet\\Control\\SystemInfo",
-            "ComputerName", newMachineName);
+        std::vector<std::pair<std::string, std::string>> machineKeys = {
+            {"SYSTEM\\CurrentControlSet\\Control\\ComputerName\\ComputerName", "ComputerName"},
+            {"SYSTEM\\CurrentControlSet\\Control\\ComputerName\\ActiveComputerName", "ComputerName"},
+            {"SYSTEM\\CurrentControlSet\\Control\\SystemInfo", "ComputerName"},
+            {"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "Hostname"},
+            {"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "NV Hostname"}
+        };
+
+        for (const auto& key : machineKeys) {
+            RegistryManager::SetValue(HKEY_LOCAL_MACHINE, key.first, key.second, newMachineName);
+        }
 
         RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
-            "SOFTWARE\\Microsoft\\Cryptography",
-            "MachineGuid", newGUID);
-
-        SetEnvironmentVariableA("COMPUTERNAME", newMachineName.c_str());
-
-        std::cout << "[+] Machine renamed to: " << newMachineName << "\n";
-        std::cout << "[+] Machine GUID changed\n";
-        return true;
-    }
-
-    bool spoofUserIdentityOnly() {
-        std::cout << "[*] Spoofing User Identity...\n";
-
-        std::string newUser = "User" + std::to_string(rand() % 1000);
-        SetEnvironmentVariableA("USERNAME", newUser.c_str());
-
-        std::cout << "[+] User identity spoofed to: " << newUser << "\n";
-        return true;
-    }
-
-    bool spoofHardwareProfilesOnly() {
-        std::cout << "[*] Spoofing Hardware Profiles...\n";
-
-        std::string newHwProfile = generateRandomGUID();
-
+            "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", newGUID);
         RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
             "SYSTEM\\CurrentControlSet\\Control\\IDConfigDB\\Hardware Profiles\\0001",
-            "HwProfileGuid", newHwProfile);
+            "HwProfileGuid", generateRandomGUID());
 
-        SetEnvironmentVariableA("FAKE_HWID", newHwProfile.c_str());
+        SetEnvironmentVariableA("COMPUTERNAME", newMachineName.c_str());
+        SetEnvironmentVariableA("USERDOMAIN", newMachineName.c_str());
 
-        std::cout << "[+] Hardware profile spoofed\n";
+        std::cout << "[+] Extended machine info spoofed\n";
         return true;
     }
 
-    bool spoofBIOSandProcessorOnly() {
-        std::cout << "[*] Spoofing BIOS and Processor Info...\n";
+    bool spoofExtendedUserEnvironment() {
+        std::cout << "[*] Spoofing Extended User Environment...\n";
+
+        std::string newUser = "User" + std::to_string(rand() % 10000);
+        std::string newUserDomain = generateRandomMachineName();
+
+        SetEnvironmentVariableA("USERNAME", newUser.c_str());
+        SetEnvironmentVariableA("USERDOMAIN", newUserDomain.c_str());
+        SetEnvironmentVariableA("USERDNSDOMAIN", (newUserDomain + ".local").c_str());
+
+        std::string userProfilePath = userProfile;
+        std::string newUserProfile = systemDrive + "\\Users\\" + newUser;
+
+        RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
+            "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\" + std::to_string(GetCurrentProcessId()),
+            "ProfileImagePath", newUserProfile);
+
+        std::cout << "[+] Extended user environment spoofed\n";
+        return true;
+    }
+
+    bool spoofHardwareComponents() {
+        std::cout << "[*] Spoofing Hardware Components...\n";
+
+        std::string fakeCPU = "Intel(R) Core(TM) i" + std::to_string((rand() % 9) + 3) +
+            "-" + std::to_string((rand() % 9000) + 1000) + " CPU @ " +
+            std::to_string((rand() % 40 + 20) / 10.0) + "GHz";
+
+        RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
+            "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+            "ProcessorNameString", fakeCPU);
+
+
+        std::string fakeMB = "MS-" + std::to_string(rand() % 9000 + 1000);
+        RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
+            "HARDWARE\\DESCRIPTION\\System\\BIOS",
+            "BaseBoardProduct", fakeMB);
 
         std::string fakeBIOS = "VER" + std::to_string(rand() % 10000);
-        std::string fakeManufacturer = "Generic Systems";
-        std::string fakeProcessor = "Intel(R) Core(TM) i" + std::to_string((rand() % 9) + 3) +
-            "-" + std::to_string((rand() % 9000) + 1000) + " CPU";
-
         RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
             "HARDWARE\\DESCRIPTION\\System\\BIOS",
             "BIOSVersion", fakeBIOS);
-        RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
-            "HARDWARE\\DESCRIPTION\\System\\BIOS",
-            "SystemManufacturer", fakeManufacturer);
-        RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
-            "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-            "ProcessorNameString", fakeProcessor);
 
-        std::cout << "[+] BIOS and Processor info spoofed\n";
+        std::cout << "[+] Hardware components spoofed\n";
         return true;
     }
 
-    bool performSafeHWIDSpoof() {
+    bool spoofStorageDevices() {
+        std::cout << "[*] Spoofing Storage Devices...\n";
+
+        std::string fakeSerial = "";
+        for (int i = 0; i < 16; i++) {
+            fakeSerial += (char)((rand() % 26) + 'A');
+        }
+
+        RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
+            "HARDWARE\\DEVICEMAP\\Scsi\\Scsi Port 0\\Scsi Bus 0\\Target Id 0\\Logical Unit Id 0",
+            "SerialNumber", fakeSerial);
+
+        std::cout << "[+] Storage devices info spoofed\n";
+        return true;
+    }
+
+    bool performAdvancedHWIDSpoof() {
         std::cout << "\n=====================================\n";
-        std::cout << "      SAFE HWID SPOOF\n";
+        std::cout << "      ADVANCED HWID SPOOF\n";
         std::cout << "=====================================\n\n";
 
         bool success = true;
 
-        success &= spoofMachineGUIDOnly();
+        success &= spoofExtendedMachineInfo();
         Sleep(300);
 
-        success &= spoofUserIdentityOnly();
+        success &= spoofExtendedUserEnvironment();
         Sleep(300);
 
-        success &= spoofHardwareProfilesOnly();
+        success &= spoofHardwareComponents();
         Sleep(300);
 
-        success &= spoofBIOSandProcessorOnly();
+        success &= spoofStorageDevices();
         Sleep(300);
 
         if (success) {
-            std::cout << "\n[OK] Safe HWID spoof completed!\n";
+            std::cout << "\n[OK] Advanced HWID spoof completed!\n";
         }
         else {
             std::cout << "\n[-] Some spoofing operations failed!\n";
@@ -246,16 +276,16 @@ public:
         std::cout << "[*] Launch command: " << cmdLine << "\n";
 
         if (CreateProcessA(
-            exePath.c_str(),           // Application name
-            (LPSTR)cmdLine.c_str(),    // Command line
-            nullptr,                   // Process security attributes
-            nullptr,                   // Thread security attributes
-            FALSE,                     // Inherit handles
-            CREATE_NEW_CONSOLE,        // Creation flags
-            nullptr,                   // Environment
-            folder.c_str(),            // Current directory
-            &si,                       // Startup info
-            &pi)) {                    // Process information
+            exePath.c_str(),
+            (LPSTR)cmdLine.c_str(),
+            nullptr,
+            nullptr,
+            FALSE,
+            CREATE_NEW_CONSOLE,
+            nullptr,
+            folder.c_str(),
+            &si,
+            &pi)) {
 
             std::cout << "[+] Process started successfully\n";
             std::cout << "[+] Process ID: " << pi.dwProcessId << "\n";
@@ -306,8 +336,8 @@ public:
         std::cout << "[+] Applying minimal spoof (no network)...\n";
 
         spoofHWID();
-        spoofMachineGUIDOnly();
-        spoofUserIdentityOnly();
+        spoofExtendedMachineInfo();
+        spoofExtendedUserEnvironment();
 
         SetEnvironmentVariableA("COMPUTERNAME", "FAKE-PC");
         SetEnvironmentVariableA("USERNAME", "User");
@@ -326,7 +356,6 @@ public:
 
         system("pause");
     }
-
 
     bool spoofHWID() {
         RegistryManager::SetValue(HKEY_LOCAL_MACHINE,
@@ -409,12 +438,10 @@ instance of Win32_VideoController {
     }
 
     bool protectFromBanMarks() {
-       
         RegistryManager::SetValue(HKEY_CURRENT_USER,
             "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FeatureUsage\\AppSwitched",
             "RustClient.exe", "1600000000");
 
-       
         std::string logPath = userProfile + "\\AppData\\Local\\Rust\\logs";
         if (fs::exists(logPath)) {
             try {
@@ -438,7 +465,6 @@ instance of Win32_VideoController {
     }
 
     void emulateLegitStartup() {
-
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> dis(100, 300);
@@ -582,36 +608,116 @@ instance of Win32_VideoController {
         std::cout << "=====================================\n\n";
     }
 
+
+    bool cleanAdditionalRegistryPaths() {
+        std::cout << "[*] Cleaning additional registry paths...\n";
+
+        
+        RegistryManager::DeleteKey(HKEY_CURRENT_USER, "Software\\Facepunch Studios LTD");
+
+        std::vector<std::string> facepunchPaths = {
+            "Software\\Facepunch Studios LTD\\Rust",
+            "Software\\Facepunch Studios LTD\\RustClient",
+            "Software\\Classes\\VirtualStore\\MACHINE\\SOFTWARE\\WOW6432Node\\Facepunch Studios LTD"
+        };
+
+        for (const auto& path : facepunchPaths) {
+            RegistryManager::DeleteKey(HKEY_CURRENT_USER, path);
+        }
+
+        std::cout << "[+] Additional registry paths cleaned\n";
+        return true;
+    }
+
+    bool cleanRecentFilesAndFolders() {
+        std::cout << "[*] Cleaning recent files and folders...\n";
+
+
+        std::vector<std::string> recentPaths = {
+            userProfile + "\\AppData\\Roaming\\Microsoft\\Windows\\Recent",
+            userProfile + "\\Recent",
+            userProfile + "\\AppData\\LocalLow\\Facepunch Studios LTD"
+        };
+
+        bool success = true;
+        for (const auto& path : recentPaths) {
+            if (fs::exists(path)) {
+                try {
+                    
+                    for (const auto& entry : fs::directory_iterator(path)) {
+                        try {
+                            if (entry.is_regular_file()) {
+                                FileManager::DeleteFileWithAttrib(entry.path().string());
+                            }
+                            else if (entry.is_directory()) {
+                                FileManager::DeleteFolder(entry.path().string());
+                            }
+                        }
+                        catch (...) {
+               
+                        }
+                    }
+                    std::cout << "[+] Cleaned: " << path << "\n";
+                }
+                catch (...) {
+                    std::cout << "[-] Failed to clean: " << path << "\n";
+                    success = false;
+                }
+            }
+        }
+
+        std::string jumpLists = userProfile + "\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\AutomaticDestinations";
+        if (fs::exists(jumpLists)) {
+            try {
+                for (const auto& entry : fs::directory_iterator(jumpLists)) {
+                    if (entry.path().extension() == ".automaticDestinations-ms") {
+                        FileManager::DeleteFileWithAttrib(entry.path().string());
+                    }
+                }
+            }
+            catch (...) {
+  
+            }
+        }
+
+        std::cout << "[+] Recent files and folders cleaned\n";
+        return success;
+    }
+
     void bypassClean() {
         printHeader("FULL SYSTEM CLEAN");
 
-        std::cout << "[1/15] Closing Steam processes...\n";
+        std::cout << "[1/17] Closing Steam processes...\n";
         ProcessManager::KillProcess("steam.exe");
         ProcessManager::KillProcess("steamwebhelper.exe");
         ProcessManager::KillProcess("RustClient.exe");
         Sleep(3000);
 
-        std::cout << "[2/15] Cleaning Rust registry entries...\n";
+        std::cout << "[2/17] Cleaning Rust registry entries...\n";
         RegistryManager::DeleteKey(HKEY_CURRENT_USER, "Software\\Facepunch Studios LTD");
         RegistryManager::DeleteKey(HKEY_CURRENT_USER, "Software\\OldDevblogRust");
         RegistryManager::DeleteKey(HKEY_CURRENT_USER, "Software\\MYRUST240DEVBLOG");
 
-        std::cout << "[3/15] Cleaning Run dialog history...\n";
+        std::cout << "[3/17] Cleaning additional registry paths...\n";
+        cleanAdditionalRegistryPaths();
+
+        std::cout << "[4/17] Cleaning Run dialog history...\n";
         RegistryManager::DeleteKey(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU");
 
-        std::cout << "[4/15] Clearing browser history...\n";
+        std::cout << "[5/17] Clearing browser history...\n";
         system("rundll32.exe inetcpl.cpl,ClearMyTracksByProcess 255 >nul 2>&1");
 
-        std::cout << "[5/15] Cleaning FeatureUsage logs...\n";
+        std::cout << "[6/17] Cleaning FeatureUsage logs...\n";
         RegistryManager::DeleteKey(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FeatureUsage\\AppSwitched");
         RegistryManager::DeleteKey(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FeatureUsage\\ShowJumpView");
 
-        std::cout << "[6/15] Removing Steam ssfn files...\n";
+        std::cout << "[7/17] Removing Steam ssfn files...\n";
         if (!steamPath.empty()) {
             std::string pattern = steamPath + "\\ssfn*";
             FileManager::DeleteFilesByPattern(pattern);
         }
-        std::cout << "[7/15] Resetting Steam login cache...\n";
+
+        std::cout << "[8/17] Resetting Steam login cache...\n";
         if (!steamPath.empty()) {
             std::string loginPath = steamPath + "\\config\\loginusers.vdf";
             if (fs::exists(loginPath)) {
@@ -621,7 +727,8 @@ instance of Win32_VideoController {
                 SetFileAttributesA(loginPath.c_str(), FILE_ATTRIBUTE_READONLY);
             }
         }
-        std::cout << "[8/15] Removing avatar cache and user data...\n";
+
+        std::cout << "[9/17] Removing avatar cache and user data...\n";
         if (!steamPath.empty()) {
             std::string avaPath = steamPath + "\\config\\avatarcache";
             if (fs::exists(avaPath)) FileManager::DeleteFolder(avaPath);
@@ -638,16 +745,19 @@ instance of Win32_VideoController {
                 catch (...) {}
             }
         }
-        std::cout << "[9/15] Removing coplay files...\n";
+
+        std::cout << "[10/17] Removing coplay files...\n";
         if (!steamPath.empty()) {
             std::string pattern = steamPath + "\\config\\coplay_*.vdf";
             FileManager::DeleteFilesByPattern(pattern);
         }
-        std::cout << "[10/15] Cleaning Steam registry settings...\n";
+
+        std::cout << "[11/17] Cleaning Steam registry settings...\n";
         RegistryManager::DeleteValue(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "AutoLoginUser");
         RegistryManager::DeleteValue(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "RememberPassword");
         RegistryManager::DeleteValue(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "MostRecentUser");
-        std::cout << "[11/15] Cleaning SRU diagnostic logs (please wait)...\n";
+
+        std::cout << "[12/17] Cleaning SRU diagnostic logs (please wait)...\n";
         system("net stop DPS >nul 2>&1");
         Sleep(2000);
         std::string sruPath = getEnvVar("windir") + "\\System32\\sru";
@@ -664,20 +774,24 @@ instance of Win32_VideoController {
         }
         Sleep(1000);
         system("net start DPS >nul 2>&1");
-        std::cout << "[12/15] Cleaning temporary files...\n";
+
+        std::cout << "[13/17] Cleaning temporary files...\n";
         std::string tempPath = getEnvVar("TEMP");
         system(("del /f /s /q \"" + tempPath + "\\*\" >nul 2>&1").c_str());
         system(("for /d %i in (\"" + tempPath + "\\*\") do rmdir /s /q \"%i\" >nul 2>&1").c_str());
         std::string winTemp = getEnvVar("windir") + "\\Temp";
         system(("del /f /s /q \"" + winTemp + "\\*\" >nul 2>&1").c_str());
         system(("for /d %i in (\"" + winTemp + "\\*\") do rmdir /s /q \"%i\" >nul 2>&1").c_str());
-        std::cout << "[13/15] Removing OldRust folder...\n";
+
+        std::cout << "[14/17] Removing OldRust folder...\n";
         std::string oldRustPath = systemDrive + "\\OldRust";
         if (fs::exists(oldRustPath)) FileManager::DeleteFolder(oldRustPath);
-        std::cout << "[14/15] Removing EasyAntiCheat...\n";
+
+        std::cout << "[15/17] Removing EasyAntiCheat...\n";
         std::string eacPath = userProfile + "\\Desktop\\OldRust\\RustClient_Data\\Plugins\\x86_64\\EasyAntiCheat.dll";
         if (fs::exists(eacPath)) FileManager::DeleteFileWithAttrib(eacPath);
-        std::cout << "[15/15] Cleaning Prefetch cache...\n";
+
+        std::cout << "[16/17] Cleaning Prefetch cache...\n";
         std::string prefetchPath = getEnvVar("windir") + "\\Prefetch";
         if (fs::exists(prefetchPath)) {
             std::vector<std::string> patterns = {
@@ -688,6 +802,9 @@ instance of Win32_VideoController {
                 FileManager::DeleteFilesByPattern(pattern);
             }
         }
+
+        std::cout << "[17/17] Cleaning recent files and folders...\n";
+        cleanRecentFilesAndFolders();
 
         if (!steamPath.empty() && fs::exists(steamPath + "\\steam.exe")) {
             std::cout << "\nStarting Steam...\n";
@@ -707,9 +824,10 @@ instance of Win32_VideoController {
             std::cout << "[1] - Delete EasyAntiCheat.dll\n";
             std::cout << "[2] - SAFE RUN (HWID Spoof + Hidden)\n";
             std::cout << "[3] - COMPLETE HWID SPOOF\n";
-            std::cout << "[4] - NETWORK SPOOF (MAC/IP)\n";
+            std::cout << "[4] - ADVANCED HWID SPOOF\n";
+            std::cout << "[5] - NETWORK SPOOF (MAC/IP)\n";
             std::cout << "[0] - Back\n\n";
-            std::cout << "Select [0-4]: ";
+            std::cout << "Select [0-5]: ";
 
             int choice;
             std::cin >> choice;
@@ -720,7 +838,8 @@ instance of Win32_VideoController {
             case 1: deleteEAC(); break;
             case 2: safeRunOldRust(); break;
             case 3: performSafeHWIDSpoof(); break;
-            case 4: performNetworkSpoof(); break;
+            case 4: performAdvancedHWIDSpoof(); break;
+            case 5: performNetworkSpoof(); break;
             default: std::cout << "Invalid choice!\n"; system("pause");
             }
         }
@@ -783,6 +902,33 @@ instance of Win32_VideoController {
         return true;
     }
 
+    bool performSafeHWIDSpoof() {
+        std::cout << "\n=====================================\n";
+        std::cout << "      SAFE HWID SPOOF\n";
+        std::cout << "=====================================\n\n";
+
+        bool success = true;
+
+        success &= spoofExtendedMachineInfo();
+        Sleep(300);
+
+        success &= spoofExtendedUserEnvironment();
+        Sleep(300);
+
+        success &= spoofHardwareComponents();
+        Sleep(300);
+
+        if (success) {
+            std::cout << "\n[OK] Safe HWID spoof completed!\n";
+        }
+        else {
+            std::cout << "\n[-] Some spoofing operations failed!\n";
+        }
+
+        system("pause");
+        return success;
+    }
+
     void deleteEAC() {
         system("cls");
         printHeader("DELETE EASYANTICHEAT");
@@ -815,6 +961,7 @@ instance of Win32_VideoController {
         }
         system("pause");
     }
+
     std::string findRustFolder() {
         std::vector<std::string> paths = {
             userProfile + "\\Desktop\\OldRust",
@@ -832,6 +979,7 @@ instance of Win32_VideoController {
         }
         return "";
     }
+
     void run() {
         while (true) {
             system("cls");
@@ -860,6 +1008,7 @@ instance of Win32_VideoController {
         }
     }
 };
+
 bool RequestAdminRights() {
     HANDLE hToken;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
@@ -868,8 +1017,9 @@ bool RequestAdminRights() {
     CloseHandle(hToken);
     return true;
 }
+
 int main() {
-    SetConsoleTitleA("SJC Ultimate Cleaner v2.1");
+    SetConsoleTitleA("SJC Ultimate Cleaner v2.2");
     srand(static_cast<unsigned int>(time(nullptr)));
     HANDLE hToken;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
@@ -886,7 +1036,7 @@ int main() {
             system("pause");
         }
         else {
-            return 0; 
+            return 0;
         }
     }
     else {
