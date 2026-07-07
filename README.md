@@ -27,7 +27,7 @@
 
 ## 🚀 Возможности
 
-- **BYPASS (полная очистка)** – 15 шагов: закрытие Steam, очистка реестра Rust, Win+R, истории браузера, FeatureUsage, удаление ssfn*, сброс loginusers.vdf, удаление avatarcache/userdata, coplay*.vdf, очистка реестра Steam, сброс SRU, очистка TEMP, удаление C:\OldRust, удаление EAC с рабочего стола, очистка Prefetch от extreme/injector.
+- **BYPASS (полная очистка)** – 17 шагов: закрытие Steam, очистка реестра Rust, Win+R, истории браузера, FeatureUsage, удаление ssfn*, сброс loginusers.vdf, удаление avatarcache/userdata, coplay*.vdf, очистка реестра Steam, сброс SRU, очистка TEMP, удаление C:\OldRust, удаление EAC с рабочего стола, очистка Prefetch от extreme/injector.
 - **RUST Manager** – безопасный запуск OldRust с HWID Spoof, бэкап DLL, удаление новых DLL (интерактивно), удаление EasyAntiCheat.dll.
 - **Автоматический запрос прав администратора**.
 - **Один файл `*.cpp`** (около 1000 строк) на C++17.
